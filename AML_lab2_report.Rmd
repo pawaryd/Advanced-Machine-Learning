@@ -1,0 +1,220 @@
+---
+title: "Advanced Machine Learning Lab 2"
+author: "Yash Pawar"
+date: "18/09/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r, message=FALSE}
+library(HMM)
+library(entropy)
+```
+
+## Q1. Build a hidden Markov model (HMM) for the scenario described.
+
+```{r}
+## initiate states
+states = c(as.character(1:10))
+
+
+## Assign transition probablities
+trans_prob = diag(0.5, nrow = 10, ncol = 10)
+for (i in 1:9) {
+  trans_prob[i,i+1] = 0.5
+}
+
+trans_prob[10,1] = 0.5
+
+
+## Assign emmision probablities
+emit_prob = diag(0, nrow = 10, ncol = 10)
+for (i in 3:8) {
+  emit_prob[i, seq(i-2,i+2)] = 0.2
+}
+
+emit_prob[1, c(1,2,3,9,10)] = 0.2
+emit_prob[2, c(1,2,3,4,10)] = 0.2
+emit_prob[9, c(7,8,9,10,1)] = 0.2
+emit_prob[10,c(8,9,10,1,2)] = 0.2
+
+
+
+symbol = 1:10
+
+# Implementation of HMM
+hmm = initHMM(States = states,
+              Symbols = symbol,
+              startProbs = c(rep(0.1,10)),
+              transProbs = trans_prob,
+              emissionProbs = emit_prob)
+```
+
+## Q2. Simulate the HMM for 100 time steps.
+
+```{r}
+time_steps = 100
+
+simulate_hmm = simHMM(hmm, time_steps)
+
+```
+
+## Q3. Discard the hidden states from the sample obtained above. Use the remaining observations to compute the filtered and smoothed probability distributions for each of the 100 time points. Compute also the most probable path.
+
+```{r}
+obs = simulate_hmm$observation
+
+## Compute forward probablity
+forward_prob = exp(forward(hmm, observation = obs))
+
+filtering_dist = forward_prob/rowSums(forward_prob)
+
+## Compute backward probablity
+backward_prob = exp(backward(hmm, observation = obs))
+
+smoothing_dist = (forward_prob*backward_prob)/rowSums(forward_prob*backward_prob)
+
+
+## Compute the most probable path using viterbi algorithm
+path_viterbi = viterbi(hmm, observation = obs)
+
+```
+
+## Q4. Compute the accuracy of the filtered and smoothed probability distributions, and of the most probable path
+
+```{r}
+# Find the most probable states for filtered distribution
+# prop.table(forward_prob, margin = 2)
+
+most_prob_states = apply(filtering_dist, MARGIN = 2 , FUN = which.max)
+
+
+# Confusion matrix for the obtained filtered distributon
+conf_matrix_filtered = table(most_prob_states == simulate_hmm$states)
+
+acc_filtered = conf_matrix_filtered[2]/time_steps
+
+
+```
+
+```{r}
+most_prob_states_smooth = apply(smoothing_dist, MARGIN = 2, FUN = which.max)
+
+# Confusion Matrix for the obtained smoothing distribution
+conf_matrix_smoothing = table(most_prob_states_smooth == simulate_hmm$states)
+
+acc_smoothing = conf_matrix_smoothing[2]/time_steps
+```
+
+```{r}
+# Most probable path
+
+conf_matrix_viterbi = table(path_viterbi == simulate_hmm$states)
+acc_viterbi = conf_matrix_viterbi[2]/time_steps
+
+```
+
+
+```{r}
+
+knitr::kable(data.frame("filtered_accuracy" = acc_filtered,
+           "smoothing_accuracy" = acc_smoothing,
+           "viterbi_accuracy" = acc_viterbi))
+
+```
+
+
+## Q5. Repeat the previous exercise with different simulated samples. 
+
+
+The smoothing distribution calculates the probablity of hidden variable conditioned on the state variables for all the time steps. Whereas, the filtered ditribution only conditions on the state variables upto current time step. In case of smoothing distrbution we have more data to condition on thus, we get better accuracy.
+
+In case of the most probable path, the probablities of hidden variables are calculated by maximizing the probablity of state variables at each time step. Thus, we get the final probablity as a result of contraints from the previous states. Hence, this probablity is less than the smoothing distribution probablity. 
+
+
+```{r}
+
+results = data.frame("Filtered Accuracy" = c(rep(0,20)),
+                     "Smoothing Accuracy"= c(rep(0,20)),
+                     "Viterbi Accuracy" = c(rep(0,20)))
+
+for (i in 1:20) {
+  simulate_hmm = simHMM(hmm, time_steps)
+  obs = simulate_hmm$observation
+
+  ## Compute forward probablity
+  forward_prob = exp(forward(hmm, observation = obs))
+
+  filtering_dist = prop.table(forward_prob, margin = 2)
+
+  ## Compute backward probablity
+  backward_prob = exp(backward(hmm, observation = obs))
+
+  smoothing_prob = forward_prob*backward_prob
+
+  smoothing_dist = prop.table(smoothing_prob, margin = 2)
+
+
+  ## Compute the most probable path using viterbi algorithm
+  path_viterbi = viterbi(hmm, observation = obs)
+  
+  most_prob_states = apply(filtering_dist, MARGIN = 2 , FUN = which.max)
+
+
+  # Confusion matrix for the obtained filtered distributon
+  conf_matrix_filtered = table(most_prob_states == simulate_hmm$states)
+
+  acc_filtered = conf_matrix_filtered[2]/time_steps
+  
+  most_prob_states_smooth = apply(smoothing_dist, MARGIN = 2, FUN = which.max)
+
+  # Confusion Matrix for the obtained smoothing distribution
+  conf_matrix_smoothing = table(most_prob_states_smooth == simulate_hmm$states)
+
+  acc_smoothing = conf_matrix_smoothing[2]/time_steps
+  
+  conf_matrix_viterbi = table(path_viterbi == simulate_hmm$states)
+  acc_viterbi = conf_matrix_viterbi[2]/time_steps
+   
+  results$Filtered.Accuracy[i] = acc_filtered
+  results$Smoothing.Accuracy[i] = acc_smoothing
+  results$Viterbi.Accuracy[i] = acc_viterbi
+
+}
+
+knitr::kable(results)
+
+```
+
+
+
+## Q6. Is it true that the more observations you have the better you know where the robot is ?
+
+When we see the following entropy plot, it is clear that the entropy does not decay with increase in time steps and thus we cannot say that we have better predictions about the position of robot with increasing time steps.   
+
+The reason for this could be that, in this problem, we are not learning the parameters i.e. the hidden variables. We are just performing a simulation based on the given parameters. And thus, even if we increase the number of time steps, the parameters will stay the same.
+
+```{r}
+
+entropy_filtered = apply(filtering_dist, MARGIN = 2, entropy.empirical)
+
+plot(entropy_filtered, type = "l")
+```
+
+## Q7.Compute the probabilities of the hidden states for the time step 101.
+
+```{r, warning=FALSE}
+z_101 = filtering_dist[,100] %*% trans_prob
+knitr::kable(z_101, caption = "Hidden state probablity for t_101")
+
+```
+
+
